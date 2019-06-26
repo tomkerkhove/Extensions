@@ -8,7 +8,6 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.JSInterop.Internal;
 
@@ -23,6 +22,20 @@ namespace Microsoft.JSInterop
 
         private static readonly ConcurrentDictionary<AssemblyKey, IReadOnlyDictionary<string, (MethodInfo, Type[])>> _cachedMethodsByAssembly
             = new ConcurrentDictionary<AssemblyKey, IReadOnlyDictionary<string, (MethodInfo, Type[])>>();
+
+        /// <summary>
+        /// An event that gets fired when an exception invoking a .NET method happens.
+        /// </summary>
+        public static event DotNetInvocationException OnDotNetInvocationException;
+
+        /// <summary>
+        /// Delegate that defines what to do with exceptions produced by dotnet interop calls.
+        /// </summary>
+        /// <param name="exception">The exception thrown by the dotnet method invocation.</param>
+        /// <param name="assemblyName">The assembly name the method belongs to.</param>
+        /// <param name="methodName">The identifier within the assembly for the method.</param>
+        /// <returns>The error object to be serialized and returned to the client.</returns>
+        public delegate object DotNetInvocationException(Exception exception, string assemblyName, string methodName);
 
         /// <summary>
         /// Receives a call from JS to .NET, locating and invoking the specified method.
@@ -93,8 +106,6 @@ namespace Microsoft.JSInterop
             catch (Exception ex)
             {
                 syncException = ExceptionDispatchInfo.Capture(ex);
-                syncException.SourceException.Data.Add(JSRuntimeBase.AssemblyNameKey, assemblyName);
-                syncException.SourceException.Data.Add(JSRuntimeBase.MethodKey, methodIdentifier);
             }
 
             // If there was no callId, the caller does not want to be notified about the result
@@ -105,7 +116,10 @@ namespace Microsoft.JSInterop
             else if (syncException != null)
             {
                 // Threw synchronously, let's respond.
-                jsRuntimeBaseInstance.EndInvokeDotNet(callId, false, syncException);
+                jsRuntimeBaseInstance.EndInvokeDotNet(
+                    callId,
+                    false,
+                    OnDotNetInvocationException?.Invoke(syncException.SourceException, assemblyName, methodIdentifier) ?? syncException);
             }
             else if (syncResult is Task task)
             {
@@ -116,10 +130,10 @@ namespace Microsoft.JSInterop
                     if (t.Exception != null)
                     {
                         var exception = t.Exception.GetBaseException();
-                        exception.Data.Add(JSRuntimeBase.AssemblyNameKey, assemblyName);
-                        exception.Data.Add(JSRuntimeBase.MethodKey, methodIdentifier);
-
-                        jsRuntimeBaseInstance.EndInvokeDotNet(callId, false, ExceptionDispatchInfo.Capture(exception));
+                        jsRuntimeBaseInstance.EndInvokeDotNet(
+                            callId,
+                            false,
+                            OnDotNetInvocationException?.Invoke(exception, assemblyName, methodIdentifier) ?? ExceptionDispatchInfo.Capture(exception));
                     }
 
                     var result = TaskGenericsUtil.GetTaskResult(task);

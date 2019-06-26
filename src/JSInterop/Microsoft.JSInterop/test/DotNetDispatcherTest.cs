@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -341,6 +342,36 @@ namespace Microsoft.JSInterop.Tests
         });
 
         [Fact]
+        public Task CanSanitizeSyncThrowingExceptions() => WithJSRuntime(async jsRuntime =>
+        {
+            // Arrange
+            var expectedMessage = "An error ocurred while invoking '[Microsoft.JSInterop.Tests]::ThrowingMethod'. Swapping to 'Development' environment will " +
+                "display more detailed information about the error that occurred.";
+
+            static string GetMessage(string assembly, string method) => $"An error ocurred while invoking '[{assembly}]::{method}'. Swapping to 'Development' environment will " +
+                "display more detailed information about the error that occurred.";
+
+            static object OnDotNetInvocationError(Exception ex, string assembly, string method) => new JSError { Message = GetMessage(assembly, method) };
+            DotNetDispatcher.OnDotNetInvocationException += OnDotNetInvocationError;
+            using var @finally = new Finally(() => DotNetDispatcher.OnDotNetInvocationException -= OnDotNetInvocationError);
+
+            // Act
+            var callId = "123";
+            var resultTask = jsRuntime.NextInvocationTask;
+            DotNetDispatcher.BeginInvoke(callId, thisAssemblyName, nameof(ThrowingClass.ThrowingMethod), default, default);
+
+            await resultTask; // This won't throw, it sets properties on the jsRuntime.
+
+            // Assert
+            var result = JsonDocument.Parse(jsRuntime.LastInvocationArgsJson).RootElement;
+            Assert.Equal(callId, result[0].GetString());
+            Assert.False(result[1].GetBoolean()); // Fails
+
+            var error = JsonSerializer.Parse<JSError>(result[2].GetRawText(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            Assert.Equal(expectedMessage, error.Message);
+        });
+
+        [Fact]
         public Task CanInvokeAsyncThrowingMethod() => WithJSRuntime(async jsRuntime =>
         {
             // Arrange
@@ -361,6 +392,36 @@ namespace Microsoft.JSInterop.Tests
             // https://github.com/aspnet/AspNetCore/issues/8612
             var exception = result[2].GetString();
             Assert.Contains(nameof(ThrowingClass.AsyncThrowingMethod), exception);
+        });
+
+        [Fact]
+        public Task CanSanitizeAsyncThrowedExceptions() => WithJSRuntime(async jsRuntime =>
+        {
+            // Arrange
+            var expectedMessage = "An error ocurred while invoking '[Microsoft.JSInterop.Tests]::AsyncThrowingMethod'. Swapping to 'Development' environment will " +
+                "display more detailed information about the error that occurred.";
+
+            static string GetMessage(string assembly, string method) => $"An error ocurred while invoking '[{assembly}]::{method}'. Swapping to 'Development' environment will " +
+                "display more detailed information about the error that occurred.";
+
+            static object OnDotNetInvocationError(Exception ex, string assembly, string method) => new JSError { Message = GetMessage(assembly, method) };
+            DotNetDispatcher.OnDotNetInvocationException += OnDotNetInvocationError;
+            using var @finally = new Finally(() => DotNetDispatcher.OnDotNetInvocationException -= OnDotNetInvocationError);
+
+            // Act
+            var callId = "123";
+            var resultTask = jsRuntime.NextInvocationTask;
+            DotNetDispatcher.BeginInvoke(callId, thisAssemblyName, nameof(ThrowingClass.AsyncThrowingMethod), default, default);
+
+            await resultTask; // This won't throw, it sets properties on the jsRuntime.
+
+            // Assert
+            var result = JsonDocument.Parse(jsRuntime.LastInvocationArgsJson).RootElement;
+            Assert.Equal(callId, result[0].GetString());
+            Assert.False(result[1].GetBoolean()); // Fails
+
+            var error = JsonSerializer.Parse<JSError>(result[2].GetRawText(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            Assert.Equal(expectedMessage, error.Message);
         });
 
         [Fact]
@@ -557,6 +618,26 @@ namespace Microsoft.JSInterop.Tests
                 _nextInvocationTcs = new TaskCompletionSource<object>();
                 return null;
             }
+        }
+
+        private class Finally : IDisposable
+        {
+            public Finally(Action action)
+            {
+                Action = action;
+            }
+
+            public Action Action { get; }
+
+            public void Dispose()
+            {
+                Action();
+            }
+        }
+
+        private class JSError
+        {
+            public string Message { get; set; }
         }
     }
 }
