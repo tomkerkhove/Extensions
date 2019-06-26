@@ -5,12 +5,14 @@ namespace Microsoft.JSInterop
 {
     public static partial class DotNetDispatcher
     {
+        public static event Microsoft.JSInterop.DotNetDispatcher.DotNetInvocationException OnDotNetInvocationException { add { } remove { } }
         public static void BeginInvoke(string callId, string assemblyName, string methodIdentifier, long dotNetObjectId, string argsJson) { }
         [Microsoft.JSInterop.JSInvokableAttribute("DotNetDispatcher.EndInvoke")]
         public static void EndInvoke(long asyncHandle, bool succeeded, Microsoft.JSInterop.Internal.JSAsyncCallResult result) { }
         public static string Invoke(string assemblyName, string methodIdentifier, long dotNetObjectId, string argsJson) { throw null; }
         [Microsoft.JSInterop.JSInvokableAttribute("DotNetDispatcher.ReleaseDotNetObject")]
         public static void ReleaseDotNetObject(long dotNetObjectId) { }
+        public delegate object DotNetInvocationException(System.Exception exception, string assemblyName, string methodName);
     }
     public static partial class DotNetObjectRef
     {
