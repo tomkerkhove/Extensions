@@ -68,9 +68,9 @@ namespace Microsoft.JSInterop
             // For failures, the common case is to call EndInvokeDotNet with the Exception object.
             // For these we'll serialize as something that's useful to receive on the JS side.
             // If the value is not an Exception, we'll just rely on it being directly JSON-serializable.
-            if (!success && resultOrException is Exception ex)
+            if (!success && resultOrException is Exception)
             {
-                resultOrException = ex.ToString();
+                resultOrException = resultOrException.ToString();
             }
             else if (!success && resultOrException is ExceptionDispatchInfo edi)
             {

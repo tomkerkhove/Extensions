@@ -3,9 +3,7 @@
 
 using System;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Xunit;
 
